@@ -105,14 +105,15 @@ Copiar `bridge/.env.example` a `bridge/.env` y pegar en `DEVICE_HMAC_KEY` **la m
 
 ```powershell
 cd bridge
-python -m pip install -r requirements.txt
-python bridge.py --port COM3 --dry-run
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -u .\bridge.py --port COM3 --dry-run
 ```
 
 El modo `--dry-run` comprueba las lecturas y **no envía nada** a AWS. Para enviar:
 
 ```powershell
-python bridge.py --port COM3
+.\.venv\Scripts\python.exe -u .\bridge.py --port COM3 --interval 2
 ```
 
 La PC debe permanecer encendida, conectada a Internet y con el proceso abierto. Al iniciar, el puente sincroniza sus marcas de tiempo con la fecha HTTPS de API Gateway y renueva el ajuste cada cinco minutos. El puente no modifica el firmware y descarta lotes si la red falla, evitando una alerta atrasada. El modo de lectura se mantiene `unknown` hasta verificar el firmware; `--mode simulated` marca explícitamente una demostración. No usar `--mode real` sin confirmar el sensor y su código cargado.
