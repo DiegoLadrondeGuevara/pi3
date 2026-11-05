@@ -27,6 +27,17 @@
       "expo-router",
       "expo-status-bar",
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "29105b5f-6eb2-42d4-b457-d0891261132a"
+      }
+    },
+    "owner": "ldeguevaradiego"
   }
 }
