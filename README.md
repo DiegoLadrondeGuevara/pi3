@@ -77,6 +77,15 @@ El despliegue crea un API URL y Cognito. Obtener `UserPoolId` y `UserPoolClientI
 
 Para Android hacen falta **dos archivos distintos** de Firebase: `google-services.json` para compilar la app y el JSON de **cuenta de servicio FCM HTTP v1** para crear una SNS Platform Application tipo `GCM`. Nunca subir ninguno al repositorio. Colocar el ARN resultante en `SNS_ANDROID_APP_ARN` y volver a desplegar. Para iOS se necesitan credenciales APNs y una SNS Platform Application tipo `APNS` o `APNS_SANDBOX`, según la compilación; colocar el ARN en `SNS_IOS_APP_ARN`.
 
+Para la prueba Android de este proyecto:
+
+1. En [Firebase Console](https://console.firebase.google.com/), crear un proyecto y registrar una app **Android** con el paquete exacto `pe.edu.utec.smartppe` (configurado en `mobile/app.json`). Descargar `google-services.json`.
+2. En **Configuración del proyecto → Cuentas de servicio**, generar una nueva clave privada JSON. Es un archivo distinto y secreto; usarlo solo para que Amazon SNS autentique envíos mediante FCM HTTP v1.
+3. En AWS SNS, región `us-east-1`, crear una **Platform application** para Firebase/FCM con autenticación por token y el JSON de cuenta de servicio. Copiar su ARN `arn:aws:sns:us-east-1:176375613060:app/GCM/...` a `SNS_ANDROID_APP_ARN` en `backend/.env` de la VM y repetir el deploy con `.serverless-aws.yml`.
+4. En Expo/EAS, agregar `GOOGLE_SERVICES_JSON` como variable **de archivo** para el entorno `preview`, cargando el `google-services.json` descargado. Crear el APK con el perfil `preview` e instalarlo en un teléfono Android.
+
+El proyecto Firebase y las credenciales deben corresponder a la misma app Android. No pegar la clave de cuenta de servicio ni el HMAC del dispositivo en el chat.
+
 Con credenciales AWS activas y permisos SNS, la aplicación Android se puede crear así, **después** de recibir el JSON de cuenta de servicio:
 
 ```powershell
