@@ -2,6 +2,15 @@
   "cli": { "version": ">= 16.0.0" },
   "build": {
     "development": { "developmentClient": true, "distribution": "internal" },
-    "preview": { "distribution": "internal" }
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://rg1jwjgy83.execute-api.us-east-1.amazonaws.com",
+        "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_pPCi4whkf",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "4qvp8v7pdcghuudu2b35q2jc0q",
+        "EXPO_PUBLIC_DEVICE_ID": "sp32-001"
+      }
+    }
   }
 }

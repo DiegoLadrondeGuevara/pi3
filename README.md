@@ -125,7 +125,7 @@ npx expo start
 
 La app tiene registro/inicio de sesión por correo, verificación del correo, vinculación por `PAIRING_CODE`, estado y últimas alertas. Usa Amplify como biblioteca de autenticación para el Cognito creado por Serverless. **AWS Amplify Hosting no hospeda una app nativa**; el build instalable se hace con Expo EAS.
 
-Para recibir push con la app cerrada, crear una **compilación nativa**. Expo Go no sirve para esta prueba en Android. En EAS, configurar `GOOGLE_SERVICES_JSON` como variable de archivo apuntando a `google-services.json` y las cuatro variables `EXPO_PUBLIC_*` para el entorno de build. Después ejecutar:
+Para recibir push con la app cerrada, crear una **compilación nativa**. Expo Go no sirve para esta prueba en Android. El perfil `preview` de `eas.json` ya contiene los cuatro valores públicos del API/Cognito y genera un APK instalable. En EAS, configurar `GOOGLE_SERVICES_JSON` como variable de archivo apuntando a `google-services.json`. Después ejecutar:
 
 ```powershell
 npx eas-cli@latest build --platform android --profile preview
