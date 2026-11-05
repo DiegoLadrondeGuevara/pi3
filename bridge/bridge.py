@@ -161,7 +161,14 @@ def main() -> int:
                 try:
                     result = send_batch(api_url, args.device_id, secret, batch)
                     print(f"seq={sequence} promedio={batch['average2s']} pico={batch['peak2s']} -> {result}")
-                except (HTTPError, URLError, TimeoutError, ValueError) as error:
+                except HTTPError as error:
+                    try:
+                        detail = json.loads(error.read().decode("utf-8")).get("error")
+                    except (UnicodeError, ValueError, AttributeError):
+                        detail = None
+                    reason = f" ({detail})" if isinstance(detail, str) else ""
+                    print(f"Envío falló en seq={sequence}: HTTP {error.code}{reason}. Lote descartado para no alertar tarde.", file=sys.stderr)
+                except (URLError, TimeoutError, ValueError) as error:
                     print(f"Envío falló en seq={sequence}: {error}. Lote descartado para no alertar tarde.", file=sys.stderr)
     except KeyboardInterrupt:
         print("Puente detenido")
