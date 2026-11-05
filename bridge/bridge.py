@@ -22,6 +22,19 @@ LINE_RE = re.compile(
     re.IGNORECASE,
 )
 STATE_FILE = Path(__file__).with_name(".bridge-state.json")
+ENV_FILE = Path(__file__).with_name(".env")
+
+
+def load_local_env() -> None:
+    """Carga solo la configuración del puente, sin sobrescribir el entorno del proceso."""
+    try:
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return
+    for line in lines:
+        key, separator, value = line.strip().partition("=")
+        if separator and key in {"DEVICE_ID", "SMART_PPE_API_URL", "DEVICE_HMAC_KEY"}:
+            os.environ.setdefault(key, value.strip())
 
 
 def parse_line(line: str) -> tuple[float, float] | None:
@@ -93,6 +106,7 @@ def send_batch(api_url: str, device_id: str, secret: str, batch: dict) -> dict:
 
 
 def main() -> int:
+    load_local_env()
     parser = argparse.ArgumentParser(description="Puente USB del ESP32 hacia Smart-PPE")
     parser.add_argument("--port", default="COM3")
     parser.add_argument("--baud", type=int, default=115200)

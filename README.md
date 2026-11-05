@@ -92,6 +92,8 @@ CloudFormation no ofrece un recurso nativo para SNS Platform Application, por lo
 
 En Windows, con el ESP32 conectado y sin un monitor serie abierto:
 
+Copiar `bridge/.env.example` a `bridge/.env` y pegar en `DEVICE_HMAC_KEY` **la misma clave** que figura en `backend/.env` de la VM. El puente lee ese archivo automáticamente; ambos `.env` quedan fuera de Git. No enviar la clave por chat.
+
 ```powershell
 cd bridge
 python -m pip install -r requirements.txt
