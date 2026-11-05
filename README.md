@@ -23,6 +23,16 @@ El archivo `backend/serverless.yml` contiene `org: diegoladrondeguevara`, `app: 
 
 Con `org` activa, ejecutar `npx serverless login` una vez en esta PC con acceso a esa organización. Sin esa sesión, Serverless v3 detiene incluso `serverless package`.
 
+Si aparece `Tenant not found`, comprobar en Serverless Dashboard el **slug real de la organización**: el nombre de usuario y el nombre de organización pueden ser diferentes. Para continuar el despliegue directamente con las credenciales AWS mientras se corrige ese dato, crear una copia local del YAML sin `org` ni `app`:
+
+```bash
+sed '/^org:/d; /^app:/d' serverless.yml > .serverless-aws.yml
+npx --no-install serverless package --config .serverless-aws.yml
+npx --no-install serverless deploy --config .serverless-aws.yml --stage dev --region us-east-1
+```
+
+Esta copia queda ignorada por Git; `serverless.yml` conserva los valores proporcionados. Verificar antes `aws sts get-caller-identity` y que la cuenta sea `176375613060`.
+
 En `backend/`, copiar `.env.example` a `.env` y definir:
 
 ```text

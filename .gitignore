@@ -1,5 +1,6 @@
 **/node_modules/
 **/.serverless/
+**/.serverless-aws.yml
 **/.expo/
 **/.tmp/
 **/dist/
