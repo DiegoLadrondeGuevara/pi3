@@ -2,12 +2,10 @@ service: smart-ppe
 frameworkVersion: '3'
 useDotenv: true
 
-# Pendientes de los datos de AWS Academy. Activar org/app cuando los compartas;
-# dejar org activo con xxxxxxxx bloquearía incluso el empaquetado local.
-# org: xxxxxxxx
-# app: smart-ppe
+org: diegoladrondeguevara
+app: smart-ppe
 custom:
-  accountId: xxxxxxxx
+  accountId: '176375613060'
 
 provider:
   name: aws

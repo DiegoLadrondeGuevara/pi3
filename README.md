@@ -19,7 +19,9 @@ La lectura actual se presenta como **concentración estimada de polvo**. El firm
 
 ## 1. Preparar AWS
 
-El archivo `backend/serverless.yml` conserva `org: xxxxxxxx` comentado y `custom.accountId: xxxxxxxx`, como se solicitó. **No se necesita activar `org` para desplegar con Serverless v3 usando credenciales AWS locales.** Completar los datos reales cuando se disponga de ellos.
+El archivo `backend/serverless.yml` contiene `org: diegoladrondeguevara`, `app: smart-ppe` y el ID de cuenta `176375613060` proporcionados para el despliegue. La organización requiere iniciar sesión en Serverless Dashboard. El ID de cuenta en YAML sirve de referencia; las credenciales AWS activas determinan dónde se despliega. Comprobarlo con `aws sts get-caller-identity` antes de ejecutar `serverless deploy`.
+
+Con `org` activa, ejecutar `npx serverless login` una vez en esta PC con acceso a esa organización. Sin esa sesión, Serverless v3 detiene incluso `serverless package`.
 
 En `backend/`, copiar `.env.example` a `.env` y definir:
 
@@ -55,6 +57,8 @@ npm run setup:push:android -- C:\ruta\privada\firebase-service-account.json
 ```
 
 CloudFormation no ofrece un recurso nativo para SNS Platform Application, por lo que esta configuración se hace en SNS o mediante su API antes de registrar teléfonos. El resto del backend se despliega con Serverless. Si no se configuran esos ARN, la API de registro responde `PUSH_NO_CONFIGURADO` y la app muestra “Push pendiente”; la consulta de lecturas sigue funcionando.
+
+**Orden recomendado para la prueba:** primer deploy con ambos ARN vacíos → comprobar puente, DynamoDB y pantalla móvil → crear el proyecto Firebase para Android o preparar APNs para iPhone → crear la aplicación de plataforma en SNS y obtener su ARN → rellenar el ARN correspondiente en `backend/.env` → repetir `serverless deploy` → instalar una compilación nativa y probar el push.
 
 ## 2. Ejecutar el puente
 
