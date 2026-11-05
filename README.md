@@ -112,13 +112,10 @@ python bridge.py --port COM3 --dry-run
 El modo `--dry-run` comprueba las lecturas y **no envía nada** a AWS. Para enviar:
 
 ```powershell
-$env:SMART_PPE_API_URL = 'https://<api-id>.execute-api.us-east-1.amazonaws.com'
-$env:DEVICE_ID = 'sp32-001'
-$env:DEVICE_HMAC_KEY = '<el mismo secreto de backend/.env>'
 python bridge.py --port COM3
 ```
 
-La PC debe permanecer encendida, conectada a Internet y con el proceso abierto. El puente no modifica el firmware y descarta lotes si la red falla, evitando una alerta atrasada. El modo de lectura se mantiene `unknown` hasta verificar el firmware; `--mode simulated` marca explícitamente una demostración. No usar `--mode real` sin confirmar el sensor y su código cargado.
+La PC debe permanecer encendida, conectada a Internet y con el proceso abierto. Al iniciar, el puente sincroniza sus marcas de tiempo con la fecha HTTPS de API Gateway y renueva el ajuste cada cinco minutos. El puente no modifica el firmware y descarta lotes si la red falla, evitando una alerta atrasada. El modo de lectura se mantiene `unknown` hasta verificar el firmware; `--mode simulated` marca explícitamente una demostración. No usar `--mode real` sin confirmar el sensor y su código cargado.
 
 ## 3. Compilar la app
 

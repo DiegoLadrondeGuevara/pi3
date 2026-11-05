@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 import hmac
 import json
@@ -68,14 +69,33 @@ def save_sequence(device_id: str, sequence: int) -> None:
     temp.replace(STATE_FILE)
 
 
-def make_batch(device_id: str, sequence: int, mode: str, samples: list[tuple[float, float]]) -> dict:
+def clock_offset(api_url: str, previous: float = 0.0) -> float:
+    """Ajusta el reloj del puente a la fecha HTTPS de API Gateway."""
+    started_at = time.time()
+    try:
+        try:
+            response = urlopen(api_url.rstrip("/") + "/", timeout=8)
+        except HTTPError as error:
+            response = error  # La raíz puede devolver 404 y aun así incluir Date.
+        finished_at = time.time()
+        header = response.headers.get("Date")
+        if not header:
+            raise ValueError("La API no devolvió Date")
+        server_time = parsedate_to_datetime(header).timestamp()
+        return server_time - (started_at + finished_at) / 2
+    except (URLError, TimeoutError, ValueError) as error:
+        print(f"No se pudo sincronizar la hora con AWS: {error}", file=sys.stderr)
+        return previous
+
+
+def make_batch(device_id: str, sequence: int, mode: str, samples: list[tuple[float, float]], offset: float = 0.0) -> dict:
     latest_instant, latest_average = samples[-1]
     peak = max(max(instant for instant, _ in samples), latest_average)
     return {
         "schemaVersion": 1,
         "deviceId": device_id,
         "sequence": sequence,
-        "observedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "observedAt": datetime.fromtimestamp(time.time() + offset, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "mode": mode,
         "metric": "dust_estimate",
         "unit": "ug/m3",
@@ -87,10 +107,10 @@ def make_batch(device_id: str, sequence: int, mode: str, samples: list[tuple[flo
     }
 
 
-def send_batch(api_url: str, device_id: str, secret: str, batch: dict) -> dict:
+def send_batch(api_url: str, device_id: str, secret: str, batch: dict, offset: float = 0.0) -> dict:
     path = f"/v1/devices/{device_id}/telemetry"
     body = json.dumps(batch, ensure_ascii=False, separators=(",", ":"))
-    sent_at = str(int(time.time() * 1000))
+    sent_at = str(int((time.time() + offset) * 1000))
     request = Request(
         api_url.rstrip("/") + path,
         data=body.encode("utf-8"),
@@ -131,6 +151,10 @@ def main() -> int:
 
     sequence = load_sequence(args.device_id)
     print(f"Leyendo {args.port} a {args.baud} baudios; modo={args.mode}; última secuencia={sequence}")
+    offset = 0.0 if args.dry_run else clock_offset(api_url)
+    next_sync = time.monotonic() + 300
+    if abs(offset) > 30:
+        print(f"Reloj local desfasado {round(offset)} s; lecturas ajustadas a la hora de AWS")
     try:
         with serial.Serial(args.port, args.baud, timeout=0.3) as port:
             samples: list[tuple[float, float]] = []
@@ -146,20 +170,23 @@ def main() -> int:
                 if now - window_start < args.interval:
                     continue
                 window_start = now
+                if not args.dry_run and now >= next_sync:
+                    offset = clock_offset(api_url, offset)
+                    next_sync = now + 300
                 if not samples:
                     if now - last_sample > 5:
                         print("Sin datos serie recientes; revisar USB/ESP32", file=sys.stderr)
                         last_sample = now
                     continue
                 sequence += 1
-                batch = make_batch(args.device_id, sequence, args.mode, samples)
+                batch = make_batch(args.device_id, sequence, args.mode, samples, offset)
                 save_sequence(args.device_id, sequence)
                 samples = []
                 if args.dry_run:
                     print(json.dumps(batch, ensure_ascii=False))
                     continue
                 try:
-                    result = send_batch(api_url, args.device_id, secret, batch)
+                    result = send_batch(api_url, args.device_id, secret, batch, offset)
                     print(f"seq={sequence} promedio={batch['average2s']} pico={batch['peak2s']} -> {result}")
                 except HTTPError as error:
                     try:
