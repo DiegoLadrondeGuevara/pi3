@@ -55,6 +55,14 @@ SNS_IOS_APP_ARN=<ARN de la aplicación SNS para iOS, cuando exista>
 
 El `.env` queda ignorado por Git. Usar **el mismo** `DEVICE_ID` y `DEVICE_HMAC_KEY` en el puente. El código de vinculación se entrega solo a quienes usarán el sensor. No desplegar con los valores `REEMPLAZAR_ANTES_DE_DESPLEGAR`.
 
+Tras el primer despliegue, verificar la ingesta con una lectura simulada bajo el umbral, firmada con la clave de `.env` sin mostrarla en la terminal:
+
+```bash
+npm run smoke:ingest -- https://rg1jwjgy83.execute-api.us-east-1.amazonaws.com
+```
+
+La respuesta esperada es HTTP 202 con `accepted: true` y estado `NORMAL`. Si la secuencia 0 ya se usó, puede responder `DUPLICADO`; en ese caso no cambia el estado.
+
 ```powershell
 cd backend
 npm ci
