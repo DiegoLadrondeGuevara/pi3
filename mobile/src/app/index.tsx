@@ -140,13 +140,15 @@ export default function Home() {
         <Text style={styles.formTitle}>{screen === 'pair' ? 'Vincular dispositivo' : screen === 'confirm' ? 'Verificar correo' : authMode === 'login' ? 'Ingresar' : 'Crear cuenta'}</Text>
         <Text style={styles.formHelp}>{screen === 'pair' ? 'Escribe el código entregado para este sensor.' : screen === 'confirm' ? 'Ingresa el código enviado a tu correo.' : 'Accede al monitor del dispositivo.'}</Text>
         {screen === 'auth' && <>
-          <TextInput accessibilityLabel="Correo" placeholder="Correo" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} style={styles.input} />
-          <TextInput accessibilityLabel="Contraseña" placeholder="Contraseña" secureTextEntry value={password} onChangeText={setPassword} style={styles.input} />
+          <Text style={styles.inputLabel}>Correo electrónico</Text>
+          <TextInput accessibilityLabel="Correo electrónico" placeholder="nombre@correo.com" placeholderTextColor="#7A8793" autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={setEmail} style={styles.input} />
+          <Text style={styles.inputLabel}>Contraseña</Text>
+          <TextInput accessibilityLabel="Contraseña" placeholder="Contraseña" placeholderTextColor="#7A8793" secureTextEntry value={password} onChangeText={setPassword} style={styles.input} />
           <Button title={busy ? 'Espera...' : authMode === 'login' ? 'Ingresar' : 'Crear cuenta'} disabled={busy || !configured} onPress={authenticate} />
           <Button title={authMode === 'login' ? 'Crear una cuenta' : 'Ya tengo cuenta'} secondary onPress={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setMessage(''); }} />
         </>}
-        {screen === 'confirm' && <><TextInput accessibilityLabel="Código de verificación" placeholder="Código de verificación" keyboardType="number-pad" value={code} onChangeText={setCode} style={styles.input} /><Button title="Verificar" disabled={busy} onPress={confirm} /></>}
-        {screen === 'pair' && <><TextInput accessibilityLabel="Código del dispositivo" placeholder="Código del dispositivo" value={pairingCode} onChangeText={setPairingCode} style={styles.input} /><Button title="Vincular" disabled={busy} onPress={pair} /><Button title="Salir" secondary onPress={logout} /></>}
+        {screen === 'confirm' && <><Text style={styles.inputLabel}>Código de verificación</Text><TextInput accessibilityLabel="Código de verificación" placeholder="Código de verificación" placeholderTextColor="#7A8793" keyboardType="number-pad" value={code} onChangeText={setCode} style={styles.input} /><Button title="Verificar" disabled={busy} onPress={confirm} /></>}
+        {screen === 'pair' && <><Text style={styles.inputLabel}>Código del dispositivo</Text><TextInput accessibilityLabel="Código del dispositivo" placeholder="Código del dispositivo" placeholderTextColor="#7A8793" value={pairingCode} onChangeText={setPairingCode} style={styles.input} /><Button title="Vincular" disabled={busy} onPress={pair} /><Button title="Salir" secondary onPress={logout} /></>}
       </View>}
 
       {screen === 'monitor' && <>
@@ -186,7 +188,8 @@ const styles = StyleSheet.create({
   link: { color: '#087B51', fontSize: 14, fontWeight: '700' }, loader: { marginTop: 80 },
   formCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E7EB', borderRadius: 18, padding: 20, gap: 12 },
   formTitle: { fontSize: 23, fontWeight: '700', color: '#142134' }, formHelp: { color: '#657181', fontSize: 14, marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: '#D6DEE3', borderRadius: 10, padding: 13, fontSize: 16, backgroundColor: '#FFFFFF' },
+  inputLabel: { color: '#142134', fontSize: 14, fontWeight: '700' },
+  input: { borderWidth: 1, borderColor: '#D6DEE3', borderRadius: 10, padding: 13, fontSize: 16, color: '#142134', backgroundColor: '#FFFFFF' },
   button: { backgroundColor: '#087B51', padding: 14, borderRadius: 10, alignItems: 'center' }, buttonSecondary: { backgroundColor: '#E7F6EF' },
   buttonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 }, buttonTextSecondary: { color: '#087B51' }, disabled: { opacity: 0.5 },
   hero: { borderRadius: 20, padding: 25, alignItems: 'center', gap: 8 }, heroIcon: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
