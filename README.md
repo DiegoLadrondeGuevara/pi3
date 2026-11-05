@@ -33,6 +33,16 @@ npx --no-install serverless deploy --config .serverless-aws.yml --stage dev --re
 
 Esta copia queda ignorada por Git; `serverless.yml` conserva los valores proporcionados. Verificar antes `aws sts get-caller-identity` y que la cuenta sea `176375613060`.
 
+En AWS Academy, `voclabs` puede denegar `iam:CreateRole`. Si existe un rol preconfigurado apto para Lambda (por ejemplo, `LabRole`), preparar la copia sin Dashboard **y con ese rol existente**:
+
+```bash
+npm run prepare:existing-role -- arn:aws:iam::176375613060:role/LabRole
+npx --no-install serverless package --config .serverless-aws.yml
+npx --no-install serverless deploy --config .serverless-aws.yml --stage dev --region us-east-1
+```
+
+Esto reemplaza las declaraciones de permisos IAM del servicio por el rol indicado. Antes de usarlo, comprobar que el rol confía en `lambda.amazonaws.com`, que el usuario puede ejecutar `iam:PassRole` y que el rol permite DynamoDB, SNS, logs y lectura de DynamoDB Streams. Si la cuenta restringe esos permisos, solicitar un rol apropiado al administrador del laboratorio.
+
 En `backend/`, copiar `.env.example` a `.env` y definir:
 
 ```text

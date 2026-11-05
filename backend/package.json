@@ -6,6 +6,7 @@
     "test": "node --test",
     "package": "serverless package",
     "deploy": "serverless deploy",
+    "prepare:existing-role": "node scripts/prepare-existing-role.mjs",
     "setup:push:android": "node scripts/setup-push-android.mjs"
   },
   "dependencies": {
