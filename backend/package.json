@@ -1,0 +1,21 @@
+{
+  "name": "smart-ppe-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "package": "serverless package",
+    "deploy": "serverless deploy",
+    "setup:push:android": "node scripts/setup-push-android.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.900.0",
+    "@aws-sdk/client-sns": "^3.900.0",
+    "@aws-sdk/lib-dynamodb": "^3.900.0",
+    "@aws-sdk/util-dynamodb": "^3.900.0",
+    "aws-jwt-verify": "^5.1.0"
+  },
+  "devDependencies": {
+    "serverless": "3.40.0"
+  }
+}

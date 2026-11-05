@@ -1,0 +1,185 @@
+service: smart-ppe
+frameworkVersion: '3'
+useDotenv: true
+
+# Pendientes de los datos de AWS Academy. Activar org/app cuando los compartas;
+# dejar org activo con xxxxxxxx bloquearía incluso el empaquetado local.
+# org: xxxxxxxx
+# app: smart-ppe
+custom:
+  accountId: xxxxxxxx
+
+provider:
+  name: aws
+  # Serverless Framework 3.40 solo valida hasta nodejs20.x.
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: dev
+  memorySize: 256
+  timeout: 10
+  logRetentionInDays: 7
+  httpApi:
+    authorizers:
+      mobile:
+        type: request
+        functionName: authorizeMobile
+        payloadVersion: '2.0'
+        enableSimpleResponses: true
+        resultTtlInSeconds: 0
+        identitySource: $request.header.Authorization
+  environment:
+    DATA_TABLE: !Ref SmartPpeData
+    PUSH_TABLE: !Ref SmartPpePush
+    DEVICE_ID: ${env:DEVICE_ID, 'sp32-001'}
+    DEVICE_HMAC_KEY: ${env:DEVICE_HMAC_KEY, 'REEMPLAZAR_ANTES_DE_DESPLEGAR'}
+    PAIRING_CODE: ${env:PAIRING_CODE, 'REEMPLAZAR_ANTES_DE_DESPLEGAR'}
+    COGNITO_USER_POOL_ID: !Ref WorkerPool
+    COGNITO_CLIENT_ID: !Ref WorkerAppClient
+    SNS_ANDROID_APP_ARN: ${env:SNS_ANDROID_APP_ARN, ''}
+    SNS_IOS_APP_ARN: ${env:SNS_IOS_APP_ARN, ''}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:TransactWriteItems
+          Resource:
+            - !GetAtt SmartPpeData.Arn
+            - !GetAtt SmartPpePush.Arn
+        - Effect: Allow
+          Action:
+            - sns:CreatePlatformEndpoint
+            - sns:Publish
+            - sns:GetEndpointAttributes
+            - sns:SetEndpointAttributes
+          Resource: '*'
+
+package:
+  patterns:
+    - '!test/**'
+    - '!README.md'
+    - '!.env*'
+
+functions:
+  authorizeMobile:
+    handler: src/handlers/authorize.handler
+  ingest:
+    handler: src/handlers/ingest.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /v1/devices/{id}/telemetry
+  claimDevice:
+    handler: src/handlers/claim.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /v1/devices/{id}/claim
+          authorizer:
+            name: mobile
+  getStatus:
+    handler: src/handlers/status.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /v1/devices/{id}/status
+          authorizer:
+            name: mobile
+  getAlerts:
+    handler: src/handlers/alerts.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /v1/devices/{id}/alerts
+          authorizer:
+            name: mobile
+  registerPush:
+    handler: src/handlers/register-push.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /v1/devices/{id}/push-registration
+          authorizer:
+            name: mobile
+  notify:
+    handler: src/handlers/notify.handler
+    events:
+      - stream:
+          type: dynamodb
+          arn: !GetAtt SmartPpeData.StreamArn
+          batchSize: 1
+          startingPosition: LATEST
+          filterPatterns:
+            - eventName: [INSERT]
+  checkOffline:
+    handler: src/handlers/offline.handler
+    events:
+      - schedule: rate(1 minute)
+
+resources:
+  Resources:
+    SmartPpeData:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-data
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
+    SmartPpePush:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-push
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+    WorkerPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-${sls:stage}-workers
+        UsernameAttributes: [email]
+        AutoVerifiedAttributes: [email]
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: false
+    WorkerAppClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${sls:stage}-mobile
+        UserPoolId: !Ref WorkerPool
+        GenerateSecret: false
+        PreventUserExistenceErrors: ENABLED
+        ExplicitAuthFlows:
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+  Outputs:
+    UserPoolId:
+      Value: !Ref WorkerPool
+    UserPoolClientId:
+      Value: !Ref WorkerAppClient
+    DataTableName:
+      Value: !Ref SmartPpeData
+    PushTableName:
+      Value: !Ref SmartPpePush
