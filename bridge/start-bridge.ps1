@@ -15,25 +15,36 @@ $envFile = Join-Path $bridgeDir '.env'
 
 try {
     if (-not (Test-Path -LiteralPath $venvPython)) {
-        $launcher = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python -ErrorAction SilentlyContinue) { 'python' } else { $null }
-        if (-not $launcher) {
-            throw 'Falta Python 3.10 o superior. Instálalo y vuelve a ejecutar este script.'
+        $launcher = $null
+        if (Get-Command python -ErrorAction SilentlyContinue) {
+            $versionText = & python --version
+            if ($LASTEXITCODE -eq 0 -and $versionText -match '^Python (\d+)\.(\d+)') { $launcher = 'python' }
         }
-        $launcherArgs = if ($launcher -eq 'py') { @('-3') } else { @() }
-        & $launcher @launcherArgs -c 'import sys; sys.exit(sys.version_info < (3, 10))'
-        if ($LASTEXITCODE -ne 0) {
+        if (-not $launcher -and (Get-Command py -ErrorAction SilentlyContinue)) {
+            $versionText = & py -3 --version
+            if ($LASTEXITCODE -eq 0 -and $versionText -match '^Python (\d+)\.(\d+)') { $launcher = 'py' }
+        }
+        if (-not $launcher) { throw 'Falta Python 3.10 o superior. Instálalo y vuelve a ejecutar este script.' }
+        if ([int]$matches[1] -lt 3 -or ([int]$matches[1] -eq 3 -and [int]$matches[2] -lt 10)) {
             throw 'Se necesita Python 3.10 o superior con el módulo venv.'
         }
         Write-Host 'Creando entorno virtual en bridge\.venv ...'
-        & $launcher @launcherArgs -m venv (Join-Path $bridgeDir '.venv')
+        if ($launcher -eq 'py') {
+            & py -3 -m venv (Join-Path $bridgeDir '.venv')
+        } else {
+            & python -m venv (Join-Path $bridgeDir '.venv')
+        }
         if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el entorno virtual.' }
     }
 
-    & $venvPython -c 'import sys; sys.exit(sys.version_info < (3, 10))'
-    if ($LASTEXITCODE -ne 0) { throw 'El entorno virtual usa Python anterior a 3.10. Elimina solo bridge\.venv y vuelve a ejecutar.' }
+    $venvVersion = & $venvPython --version
+    if ($LASTEXITCODE -ne 0 -or $venvVersion -notmatch '^Python (\d+)\.(\d+)') { throw 'El entorno virtual de Python no funciona.' }
+    if ([int]$matches[1] -lt 3 -or ([int]$matches[1] -eq 3 -and [int]$matches[2] -lt 10)) {
+        throw 'El entorno virtual usa Python anterior a 3.10. Recrea bridge\.venv y vuelve a ejecutar.'
+    }
 
-    & $venvPython -c 'import importlib.util as u,importlib.metadata as m,sys; sys.exit(not u.find_spec(''serial'') or m.version(''pyserial'') != ''3.5'')'
-    if ($LASTEXITCODE -ne 0) {
+    $packages = & $venvPython -m pip list --disable-pip-version-check --format=freeze
+    if ($LASTEXITCODE -ne 0 -or -not ($packages | Where-Object { $_ -match '^pyserial==3\.5$' })) {
         Write-Host 'Instalando la dependencia pyserial 3.5 ...'
         & $venvPython -m pip install -r (Join-Path $bridgeDir 'requirements.txt')
         if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar pyserial. Comprueba Internet y vuelve a intentar.' }
