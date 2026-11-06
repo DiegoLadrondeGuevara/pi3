@@ -9,7 +9,7 @@ Fecha de diseño: 2026-11-05. Alcance: un ESP32, una computadora puente y una ap
 - **Backend:** Amazon API Gateway HTTP API, AWS Lambda y Amazon DynamoDB. AWS Amplify se usa en la aplicación React Native para autenticación y acceso a la API existente. No se necesita EC2, RDS ni un servidor permanente.
 - **Notificaciones:** DynamoDB Streams activa una Lambda de notificaciones al crear un evento de alerta; Amazon SNS Mobile Push entrega el aviso a FCM (Android) o APNs (iOS). La app debe ser una compilación nativa instalable; una vista web o Expo Go no satisface la alerta con la app cerrada.
 - **Historial:** lecturas periódicas y picos/alertas en DynamoDB. S3 no participa en el flujo crítico. Se añadiría solo para exportaciones CSV o archivos de evidencia cuando exista esa necesidad.
-- **Alcance de medición:** por ahora, una sola concentración estimada de polvo sin identificación validada de PM2.5, PM10, COV, sílice o toxicidad. Los niveles de la demo no son límites ocupacionales. Hasta conocer el firmware y sensor exactos, el sistema no declara que el aire sea seguro.
+- **Alcance de medición:** el compañero identificó un sensor óptico Sharp GP2Y1010AU0F y una placa ESP32 DevKit V1 CP2102. Aún no se han validado cableado, calibración ni precisión. El sistema muestra una concentración estimada de polvo, sin identificación validada de PM2.5, PM10, COV, sílice o toxicidad. Los niveles de la demo no son límites ocupacionales; el sistema no declara que el aire sea seguro.
 
 ## 2. Flujo completo
 
@@ -34,6 +34,8 @@ flowchart LR
 ```
 
 La alarma física no depende de Internet. La notificación móvil sí depende de la PC puente, la red, AWS y el servicio de push del sistema operativo. No se promete entrega instantánea o garantizada.
+
+Alimentar la placa con 5 V por USB-C permitiría funcionamiento local sin laptop, sujeto a verificar el consumo conjunto del sensor y ventilador. La arquitectura actual aún necesita la PC para enviar telemetría. La operación totalmente autónoma requeriría implementar conectividad Wi-Fi y el envío firmado desde el ESP32.
 
 ### Secuencia de alertas
 

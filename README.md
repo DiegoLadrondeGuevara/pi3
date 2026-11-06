@@ -4,14 +4,19 @@ ESP32 por USB → puente Python en PC → API Gateway → Lambda → DynamoDB �
 
 **Firmware nuevo:** [`firmware/README.md`](./firmware/README.md) explica las versiones simulada y real, el promedio, el estado de los LEDs y la verificación eléctrica necesaria antes de cargar la versión real.
 
+**APK Android probado:** [descargar Smart-PPE](https://expo.dev/artifacts/eas/EAq9Isvx4dFNDODtAVEXVsgC7ET0SCYzv443hXDhLrk.apk). El único dispositivo configurado es `sp32-001`. Después de crear/verificar la cuenta en la app, introducir el código de vinculación entregado por privado. En esta PC queda anotado en `ACCESO_LOCAL.md`, excluido de Git por ser una credencial de acceso.
+
 ## Estado comprobado
 
 - El ESP32 conectado en Windows aparece como **COM3 / CP210x**, emite a **115200 baudios** y el puente genera lotes cada 2 segundos. El 5 de noviembre de 2026 la prueba mostró repetidamente **1588.2 µg/m³**. Esto verifica el transporte serie, pero **no** la validez ni calibración de la medición.
 - `backend/` empaqueta con Serverless Framework **3.40** y sus pruebas locales pasan.
 - `mobile/` fue compilada como APK e instalada en Android. La cuenta Cognito y el dispositivo ya se vincularon.
 - El stack `smart-ppe-dev` está desplegado en AWS Academy (`us-east-1`), y se comprobó la ingesta de lecturas y la recepción de una notificación push Android. La sesión de AWS Academy puede detenerse y requerir reinicio.
+- El compañero identificó el sensor como **Sharp GP2Y1010AU0F** y la placa como **ESP32 DevKit V1, CP2102, 30 pines, USB-C**. Se recibió un esquema de conexiones, pero aún falta confirmar con medición el voltaje que llega a GPIO34 y la posible adaptación de Vo.
 
-La lectura actual se presenta como **concentración estimada de polvo**. La notificación comprobada provino del ciclo simulado del firmware anterior. Hay dos nuevos sketches, pero la medición real requiere verificar el modelo y el cableado antes de cargarlos. Los umbrales **son solo de demostración**. No usar la app para determinar exposición ocupacional ni declarar que un área es segura.
+La lectura actual se presenta como **concentración estimada de polvo**. La notificación comprobada provino del ciclo simulado del firmware anterior. Hay dos nuevos sketches, pero la medición real requiere verificar el voltaje de entrada, el cableado y la calibración antes de cargarlos. Los umbrales **son solo de demostración**. No usar la app para determinar exposición ocupacional ni declarar que un área es segura.
+
+**Alimentación sin laptop:** una fuente USB-C de 5 V puede alimentar la placa y permitir el funcionamiento local del sensor y los LEDs, si también cubre correctamente el sensor y el ventilador. El flujo de notificaciones actual depende del puente Python por USB en la PC. Para enviar datos al celular sin laptop habrá que añadir conexión Wi-Fi desde el ESP32 y adaptar la autenticación/envío al API; solo cambiar la alimentación no reemplaza el puente.
 
 ## Estructura
 
