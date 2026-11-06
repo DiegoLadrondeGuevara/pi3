@@ -22,6 +22,7 @@ La lectura actual se presenta como **concentración estimada de polvo**. La noti
 
 - `backend/serverless.yml`: API HTTP, Lambdas, DynamoDB, Cognito y EventBridge.
 - `bridge/bridge.py`: lector serie y envío HTTPS firmado HMAC.
+- `bridge/start-bridge.ps1`: arranque en otra laptop Windows; [guía paso a paso](./bridge/README.md).
 - `firmware/`: sketches de simulación y de lectura analógica.
 - `mobile/`: app Expo / React Native con Amplify Auth, una pantalla y push nativo.
 
@@ -106,6 +107,8 @@ CloudFormation no ofrece un recurso nativo para SNS Platform Application, por lo
 **Orden recomendado para la prueba:** primer deploy con ambos ARN vacíos → comprobar puente, DynamoDB y pantalla móvil → crear el proyecto Firebase para Android o preparar APNs para iPhone → crear la aplicación de plataforma en SNS y obtener su ARN → rellenar el ARN correspondiente en `backend/.env` → repetir `serverless deploy` → instalar una compilación nativa y probar el push.
 
 ## 2. Ejecutar el puente
+
+Para instalarlo y ejecutarlo en **otra laptop Windows** desde un clon nuevo de GitHub, seguir primero [`bridge/README.md`](./bridge/README.md). El script prepara Python, detecta el CP210x y arranca la simulación actual.
 
 En Windows, con el ESP32 conectado y sin un monitor serie abierto:
 

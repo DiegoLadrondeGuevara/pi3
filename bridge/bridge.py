@@ -91,6 +91,27 @@ def save_sequence(device_id: str, sequence: int) -> None:
     temp.replace(STATE_FILE)
 
 
+def next_sequence(previous: int, offset: float = 0.0, now: float | None = None) -> int:
+    """Secuencia creciente aunque se cambie la PC que ejecuta el puente."""
+    timestamp = time.time() if now is None else now
+    return max(previous + 1, int((timestamp + offset) * 1000))
+
+
+def choose_serial_port(ports: list) -> str:
+    """Prefiere un único CP210x; si hay varios puertos exige selección explícita."""
+    if not ports:
+        raise ValueError("No se detectaron puertos serie. Conecta el ESP32 y revisa el controlador CP210x.")
+    cp210x = [port for port in ports if
+              (port.vid, port.pid) == (0x10C4, 0xEA60)
+              or "cp210" in (port.description or "").lower()]
+    if len(cp210x) == 1:
+        return cp210x[0].device
+    if len(ports) == 1 and (ports[0].vid is not None or "usb" in (ports[0].description or "").lower()):
+        return ports[0].device
+    available = ", ".join(f"{port.device} ({port.description})" for port in ports)
+    raise ValueError(f"Varios puertos serie: {available}. Indica uno con --port COMx.")
+
+
 def clock_offset(api_url: str, previous: float = 0.0) -> float:
     """Ajusta el reloj del puente a la fecha HTTPS de API Gateway."""
     started_at = time.time()
@@ -150,7 +171,7 @@ def send_batch(api_url: str, device_id: str, secret: str, batch: dict, offset: f
 def main() -> int:
     load_local_env()
     parser = argparse.ArgumentParser(description="Puente USB del ESP32 hacia Smart-PPE")
-    parser.add_argument("--port", default="COM3")
+    parser.add_argument("--port", default="auto", help="Puerto serie o auto para detectar CP210x")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--device-id", default=os.getenv("DEVICE_ID", "sp32-001"))
     parser.add_argument("--mode", choices=["real", "simulated", "unknown"], default="unknown")
@@ -167,18 +188,25 @@ def main() -> int:
 
     try:
         import serial
+        from serial.tools import list_ports
     except ImportError:
         print("Falta pyserial: python -m pip install -r requirements.txt", file=sys.stderr)
         return 2
 
+    try:
+        port_name = choose_serial_port(list(list_ports.comports())) if args.port.lower() == "auto" else args.port
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+
     sequence = load_sequence(args.device_id)
-    print(f"Leyendo {args.port} a {args.baud} baudios; modo={args.mode}; última secuencia={sequence}")
+    print(f"Leyendo {port_name} a {args.baud} baudios; modo={args.mode}; última secuencia={sequence}")
     offset = 0.0 if args.dry_run else clock_offset(api_url)
     next_sync = time.monotonic() + 300
     if abs(offset) > 30:
         print(f"Reloj local desfasado {round(offset)} s; lecturas ajustadas a la hora de AWS")
     try:
-        with serial.Serial(args.port, args.baud, timeout=0.3) as port:
+        with serial.Serial(port_name, args.baud, timeout=0.3) as port:
             samples: list[tuple[float, float]] = []
             batch_mode = args.mode
             batch_alarm: str | None = None
@@ -207,13 +235,13 @@ def main() -> int:
                         print("Sin datos serie recientes; revisar USB/ESP32", file=sys.stderr)
                         last_sample = now
                     continue
-                sequence += 1
+                sequence = next_sequence(sequence, offset)
                 batch = make_batch(args.device_id, sequence, batch_mode, samples, offset, batch_alarm)
-                save_sequence(args.device_id, sequence)
                 samples = []
                 if args.dry_run:
                     print(json.dumps(batch, ensure_ascii=False))
                     continue
+                save_sequence(args.device_id, sequence)
                 try:
                     result = send_batch(api_url, args.device_id, secret, batch, offset)
                     print(f"seq={sequence} promedio={batch['average2s']} pico={batch['peak2s']} -> {result}")
@@ -230,7 +258,7 @@ def main() -> int:
         print("Puente detenido")
         return 0
     except serial.SerialException as error:
-        print(f"No se puede abrir o leer {args.port}: {error}", file=sys.stderr)
+        print(f"No se puede abrir o leer {port_name}: {error}", file=sys.stderr)
         return 1
 
 

@@ -1,6 +1,7 @@
 import unittest
+from types import SimpleNamespace
 
-from bridge import make_batch, parse_line, parse_reading, sign
+from bridge import choose_serial_port, make_batch, next_sequence, parse_line, parse_reading, sign
 
 
 class BridgeTests(unittest.TestCase):
@@ -26,6 +27,21 @@ class BridgeTests(unittest.TestCase):
     def test_warmup_and_errors_are_not_sent_as_readings(self):
         self.assertIsNone(parse_reading("Estado: NO_DATA | Modo: real | Iniciando sensor"))
         self.assertIsNone(parse_reading("ERROR: revisar divisor de voltaje"))
+
+    def test_auto_port_prefers_cp210x_without_assuming_com3(self):
+        ports = [
+            SimpleNamespace(device="COM7", description="Bluetooth", vid=None, pid=None),
+            SimpleNamespace(device="COM8", description="CP210x USB to UART", vid=0x10C4, pid=0xEA60),
+        ]
+        self.assertEqual(choose_serial_port(ports), "COM8")
+        with self.assertRaises(ValueError):
+            choose_serial_port(ports[:1])
+        with self.assertRaises(ValueError):
+            choose_serial_port(ports[:1] + [SimpleNamespace(device="COM9", description="USB serial", vid=None, pid=None)])
+
+    def test_sequence_survives_laptop_switch_and_clock_overlap(self):
+        self.assertEqual(next_sequence(42, now=1_800_000_000), 1_800_000_000_000)
+        self.assertEqual(next_sequence(1_800_000_000_000, now=1_800_000_000), 1_800_000_000_001)
 
     def test_hmac_is_stable(self):
         self.assertEqual(len(sign("x" * 32, "1234567890123", "/v1/devices/sp32-001/telemetry", "{}")), 64)
