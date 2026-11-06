@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import sys
 import time
+from typing import NamedTuple
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -22,6 +23,8 @@ LINE_RE = re.compile(
     r"Promedio\s*\(2s\):\s*(-?\d+(?:\.\d+)?)\s*ug/m3",
     re.IGNORECASE,
 )
+MODE_RE = re.compile(r"\|\s*Modo:\s*(real|simulated)\b", re.IGNORECASE)
+ALARM_RE = re.compile(r"\|\s*Estado:\s*(NORMAL|WARNING|CRITICAL)\b", re.IGNORECASE)
 STATE_FILE = Path(__file__).with_name(".bridge-state.json")
 ENV_FILE = Path(__file__).with_name(".env")
 
@@ -38,14 +41,33 @@ def load_local_env() -> None:
             os.environ.setdefault(key, value.strip())
 
 
-def parse_line(line: str) -> tuple[float, float] | None:
+class SerialReading(NamedTuple):
+    instant: float
+    average: float
+    mode: str | None
+    alarm_level: str | None
+
+
+def parse_reading(line: str) -> SerialReading | None:
     match = LINE_RE.search(line)
     if not match:
         return None
     instant, average = (float(value) for value in match.groups())
     if not all(float("-inf") < value < float("inf") for value in (instant, average)):
         return None
-    return max(0.0, instant), max(0.0, average)
+    mode = MODE_RE.search(line)
+    alarm = ALARM_RE.search(line)
+    return SerialReading(
+        max(0.0, instant), max(0.0, average),
+        mode.group(1).lower() if mode else None,
+        alarm.group(1).upper() if alarm else None,
+    )
+
+
+def parse_line(line: str) -> tuple[float, float] | None:
+    """Compatibilidad con consumidores del formato serie anterior."""
+    reading = parse_reading(line)
+    return (reading.instant, reading.average) if reading else None
 
 
 def sign(secret: str, sent_at: str, path: str, body: str) -> str:
@@ -88,7 +110,7 @@ def clock_offset(api_url: str, previous: float = 0.0) -> float:
         return previous
 
 
-def make_batch(device_id: str, sequence: int, mode: str, samples: list[tuple[float, float]], offset: float = 0.0) -> dict:
+def make_batch(device_id: str, sequence: int, mode: str, samples: list[tuple[float, float]], offset: float = 0.0, alarm_level: str | None = None) -> dict:
     latest_instant, latest_average = samples[-1]
     peak = max(max(instant for instant, _ in samples), latest_average)
     return {
@@ -103,7 +125,7 @@ def make_batch(device_id: str, sequence: int, mode: str, samples: list[tuple[flo
         "average2s": round(latest_average, 2),
         "peak2s": round(peak, 2),
         "sampleCount": len(samples),
-        "alarmLevel": None,
+        "alarmLevel": alarm_level,
     }
 
 
@@ -158,13 +180,20 @@ def main() -> int:
     try:
         with serial.Serial(args.port, args.baud, timeout=0.3) as port:
             samples: list[tuple[float, float]] = []
+            batch_mode = args.mode
+            batch_alarm: str | None = None
             window_start = time.monotonic()
             last_sample = window_start
             while True:
                 raw = port.readline().decode("utf-8", errors="replace")
-                parsed = parse_line(raw)
+                parsed = parse_reading(raw)
                 if parsed:
-                    samples.append(parsed)
+                    detected_mode = parsed.mode or args.mode
+                    if samples and detected_mode != batch_mode:
+                        samples = []  # No mezclar simulación y sensor en el mismo lote.
+                    batch_mode = detected_mode
+                    batch_alarm = parsed.alarm_level
+                    samples.append((parsed.instant, parsed.average))
                     last_sample = time.monotonic()
                 now = time.monotonic()
                 if now - window_start < args.interval:
@@ -179,7 +208,7 @@ def main() -> int:
                         last_sample = now
                     continue
                 sequence += 1
-                batch = make_batch(args.device_id, sequence, args.mode, samples, offset)
+                batch = make_batch(args.device_id, sequence, batch_mode, samples, offset, batch_alarm)
                 save_sequence(args.device_id, sequence)
                 samples = []
                 if args.dry_run:

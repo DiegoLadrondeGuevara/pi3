@@ -4,7 +4,7 @@ Fecha de diseño: 2026-11-05. Alcance: un ESP32, una computadora puente y una ap
 
 ## 1. Decisiones
 
-- **Origen de datos:** el ESP32 conectado por USB a la computadora. Windows lo reconoce como `COM3` mediante un CP2102 y el firmware cargado emite `Instantanio: ... ug/m3 | Promedio (2s): ... ug/m3` a 115200 baudios. El programa `ESP32_PMS5003_demo.ino` adjunto **no es el firmware cargado**, pues produce un formato diferente y viene en modo simulado.
+- **Origen de datos:** el ESP32 conectado por USB a la computadora. Windows lo reconoce como `COM3` mediante un CP2102. Se prepararon dos programas nuevos en `firmware/`: simulación y lectura analógica real, ambos a 115200 baudios. Aún hay que verificar el modelo/cableado y cargar el programa deseado; `ESP32_PMS5003_demo.ino` adjunto no es ninguno de ellos.
 - **Puente local:** un proceso en la computadora lee continuamente el puerto serie, agrupa muestras durante 2 segundos y envía una petición HTTPS. Ante un fallo de red descarta ese lote; no convierte lecturas antiguas en alertas nuevas.
 - **Backend:** Amazon API Gateway HTTP API, AWS Lambda y Amazon DynamoDB. AWS Amplify se usa en la aplicación React Native para autenticación y acceso a la API existente. No se necesita EC2, RDS ni un servidor permanente.
 - **Notificaciones:** DynamoDB Streams activa una Lambda de notificaciones al crear un evento de alerta; Amazon SNS Mobile Push entrega el aviso a FCM (Android) o APNs (iOS). La app debe ser una compilación nativa instalable; una vista web o Expo Go no satisface la alerta con la app cerrada.
@@ -37,13 +37,13 @@ La alarma física no depende de Internet. La notificación móvil sí depende de
 
 ### Secuencia de alertas
 
-1. El puente parsea la línea serie y acumula `instantáneo`, `promedio de 2 s`, máximo del lote y número de muestras. Envía un lote cada 2 segundos con `deviceId`, `sequence`, `observedAt` UTC y `mode` (`real`, `simulated` o `unknown`). Hasta verificar el firmware, el modo es `unknown`.
+1. El puente parsea la línea serie y acumula `instantáneo`, `promedio de 2 s`, máximo del lote y número de muestras. Envía un lote cada 2 segundos con `deviceId`, `sequence`, `observedAt` UTC y `mode` (`real`, `simulated` o `unknown`). Los programas nuevos imprimen también `Modo` y `Estado`, que el puente transmite; con el programa anterior sigue siendo `unknown` salvo que se indique manualmente.
 2. La Lambda de ingesta valida firma, formato, rango, antigüedad y secuencia. Ignora duplicados y lecturas fuera de orden.
-3. La Lambda actualiza el estado actual. Los umbrales se guardan como configuración de **demostración** por dispositivo. Se aplican histéresis y varias muestras consecutivas para evitar cambios por ruido. Escalar de precaución a alerta genera un evento inmediato; un estado sostenido no genera una notificación por cada lote.
+3. La Lambda actualiza el estado actual. Si llega `alarmLevel`, usa ese estado calculado por el ESP32. De lo contrario aplica sus umbrales de **demostración** guardados por dispositivo (75/150 µg/m³ en el despliegue actual), con histéresis y confirmación. Los programas nuevos usan 50/150 µg/m³ y también son solo una demostración. Una transición genera un evento; un estado sostenido no crea una notificación por cada lote.
 4. Una transición crea un elemento `ALERT` en DynamoDB. El Stream invoca la Lambda de notificaciones, que consulta los teléfonos registrados y publica por SNS. El `alertId` viaja en el push para abrir el evento en la misma pantalla.
 5. Si no llegan datos durante 30 segundos, las consultas muestran `OFFLINE`. EventBridge comprueba cada minuto y crea **una** alerta de desconexión por transición, si corresponde.
 
-**Sincronización con la alarma física:** el firmware actual solo imprime concentraciones. Para garantizar que el móvil avise exactamente cuando suena la alarma local, el compañero debe compartir el código cargado o imprimir también `alarmLevel`/`alarmActive` por serie. Hasta entonces, la clasificación en AWS es una lógica de demostración independiente.
+**Sincronización con la alarma física:** los nuevos programas imprimen `Estado: NORMAL/WARNING/CRITICAL`, que el puente envía como `alarmLevel`. Así la transición móvil usa el mismo estado que los LEDs después de cargar uno de ellos. La entrega push sigue sujeta a conexión y al sistema operativo.
 
 ## 3. Contrato de telemetría
 
@@ -66,7 +66,7 @@ Ejemplo de lote enviado por el puente; los valores son ilustrativos, no una medi
 }
 ```
 
-El contrato admite una futura métrica PM2.5/PM10 **solo si** se confirma un sensor que la mida. `alarmLevel` pasará a ser la señal prioritaria cuando el firmware la exponga y esté probada. Las horas se almacenan en UTC y se muestran en la zona horaria del teléfono.
+El contrato admite una futura métrica PM2.5/PM10 **solo si** se confirma un sensor que la mida. `alarmLevel` es la señal prioritaria cuando el firmware nuevo la expone; con el anterior permanece `null`. Las horas se almacenan en UTC y se muestran en la zona horaria del teléfono.
 
 ## 4. DynamoDB
 

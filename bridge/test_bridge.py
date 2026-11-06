@@ -1,6 +1,6 @@
 import unittest
 
-from bridge import make_batch, parse_line, sign
+from bridge import make_batch, parse_line, parse_reading, sign
 
 
 class BridgeTests(unittest.TestCase):
@@ -14,6 +14,18 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(batch["peak2s"], 100)
         self.assertEqual(batch["average2s"], 60)
         self.assertEqual(batch["mode"], "unknown")
+
+    def test_new_firmware_reports_mode_and_led_state(self):
+        line = "Instantanio: 200.0 ug/m3 | Promedio (2s): 160.0 ug/m3 | Estado: CRITICAL | Modo: simulated"
+        reading = parse_reading(line)
+        self.assertEqual(reading, (200.0, 160.0, "simulated", "CRITICAL"))
+        batch = make_batch("sp32-001", 4, reading.mode, [(reading.instant, reading.average)], alarm_level=reading.alarm_level)
+        self.assertEqual(batch["mode"], "simulated")
+        self.assertEqual(batch["alarmLevel"], "CRITICAL")
+
+    def test_warmup_and_errors_are_not_sent_as_readings(self):
+        self.assertIsNone(parse_reading("Estado: NO_DATA | Modo: real | Iniciando sensor"))
+        self.assertIsNone(parse_reading("ERROR: revisar divisor de voltaje"))
 
     def test_hmac_is_stable(self):
         self.assertEqual(len(sign("x" * 32, "1234567890123", "/v1/devices/sp32-001/telemetry", "{}")), 64)

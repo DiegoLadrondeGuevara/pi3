@@ -2,19 +2,22 @@
 
 ESP32 por USB → puente Python en PC → API Gateway → Lambda → DynamoDB → SNS Mobile Push → app React Native. [Arquitectura y tablas](./ARQUITECTURA.md).
 
+**Firmware nuevo:** [`firmware/README.md`](./firmware/README.md) explica las versiones simulada y real, el promedio, el estado de los LEDs y la verificación eléctrica necesaria antes de cargar la versión real.
+
 ## Estado comprobado
 
 - El ESP32 conectado en Windows aparece como **COM3 / CP210x**, emite a **115200 baudios** y el puente genera lotes cada 2 segundos. El 5 de noviembre de 2026 la prueba mostró repetidamente **1588.2 µg/m³**. Esto verifica el transporte serie, pero **no** la validez ni calibración de la medición.
 - `backend/` empaqueta con Serverless Framework **3.40** y sus pruebas locales pasan.
-- `mobile/` pasa TypeScript, lint y la exportación del bundle Android; aún no se ha generado un APK ni instalado en un teléfono.
-- No se ha desplegado AWS: faltan credenciales, permisos de AWS Academy y datos de cuenta. Tampoco se ha probado push real.
+- `mobile/` fue compilada como APK e instalada en Android. La cuenta Cognito y el dispositivo ya se vincularon.
+- El stack `smart-ppe-dev` está desplegado en AWS Academy (`us-east-1`), y se comprobó la ingesta de lecturas y la recepción de una notificación push Android. La sesión de AWS Academy puede detenerse y requerir reinicio.
 
-La lectura actual se presenta como **concentración estimada de polvo**. El firmware instalado no ha sido identificado y el archivo `.ino` recibido no coincide con la salida serie. Los umbrales **75/150 µg/m³ son solo de demostración**. No usar la app para determinar exposición ocupacional ni declarar que un área es segura.
+La lectura actual se presenta como **concentración estimada de polvo**. La notificación comprobada provino del ciclo simulado del firmware anterior. Hay dos nuevos sketches, pero la medición real requiere verificar el modelo y el cableado antes de cargarlos. Los umbrales **son solo de demostración**. No usar la app para determinar exposición ocupacional ni declarar que un área es segura.
 
 ## Estructura
 
 - `backend/serverless.yml`: API HTTP, Lambdas, DynamoDB, Cognito y EventBridge.
 - `bridge/bridge.py`: lector serie y envío HTTPS firmado HMAC.
+- `firmware/`: sketches de simulación y de lectura analógica.
 - `mobile/`: app Expo / React Native con Amplify Auth, una pantalla y push nativo.
 
 ## 1. Preparar AWS
@@ -116,7 +119,7 @@ El modo `--dry-run` comprueba las lecturas y **no envía nada** a AWS. Para envi
 .\.venv\Scripts\python.exe -u .\bridge.py --port COM3 --interval 2
 ```
 
-La PC debe permanecer encendida, conectada a Internet y con el proceso abierto. Al iniciar, el puente sincroniza sus marcas de tiempo con la fecha HTTPS de API Gateway y renueva el ajuste cada cinco minutos. El puente no modifica el firmware y descarta lotes si la red falla, evitando una alerta atrasada. El modo de lectura se mantiene `unknown` hasta verificar el firmware; `--mode simulated` marca explícitamente una demostración. No usar `--mode real` sin confirmar el sensor y su código cargado.
+La PC debe permanecer encendida, conectada a Internet y con el proceso abierto. Al iniciar, el puente sincroniza sus marcas de tiempo con la fecha HTTPS de API Gateway y renueva el ajuste cada cinco minutos. El puente no modifica el firmware y descarta lotes si la red falla, evitando una alerta atrasada. Con los sketches nuevos, lee `Modo` y `Estado` del puerto serie; con el firmware anterior, conserva `unknown` o usa el valor manual de `--mode`.
 
 ## 3. Compilar la app
 
@@ -148,4 +151,4 @@ cd ../bridge; python -m unittest -v
 cd ../mobile; npm run typecheck; npm run lint
 ```
 
-La prueba final pendiente requiere AWS Academy y un teléfono: desplegar, iniciar puente, vincular, registrar push y comprobar una transición con la app abierta, en segundo plano y cerrada. Comparar la alerta local del equipo con la móvil **solo** después de obtener el firmware realmente cargado: el protocolo serie actual no incluye el estado de su alarma física.
+La integración de API y push ya fue comprobada con lecturas simuladas. La siguiente prueba es cargar uno de los sketches nuevos y comparar el estado de los LEDs con la app; la validación de mediciones reales sigue pendiente de identificar y calibrar el sensor.
