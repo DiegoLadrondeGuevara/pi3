@@ -1,5 +1,6 @@
 import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { db } from '../lib/aws.mjs';
+import { notifyAlert } from './notify.mjs';
 
 export async function handler() {
   const deviceId = process.env.DEVICE_ID;
@@ -37,6 +38,11 @@ export async function handler() {
         ConditionExpression: 'attribute_not_exists(PK)',
       } },
     ] }));
+    try {
+      await notifyAlert({ alertId, deviceId, status: 'OFFLINE' });
+    } catch (pushError) {
+      console.error('PUSH_FAILED', { alertId, error: pushError });
+    }
     return { changed: true, alertId };
   } catch (error) {
     if (error.name === 'TransactionCanceledException') return { changed: false, reason: 'RACE_OR_DUPLICATE' };

@@ -12,6 +12,7 @@ ESP32 por USB → puente Python en PC → API Gateway → Lambda → DynamoDB �
 - `backend/` empaqueta con Serverless Framework **3.40** y sus pruebas locales pasan.
 - `mobile/` fue compilada como APK e instalada en Android. La cuenta Cognito y el dispositivo ya se vincularon.
 - El stack `smart-ppe-dev` está desplegado en AWS Academy (`us-east-1`), y se comprobó la ingesta de lecturas y la recepción de una notificación push Android. La sesión de AWS Academy puede detenerse y requerir reinicio.
+- En la sesión del 6 de noviembre, AWS Academy deshabilitó el mapping de DynamoDB Streams por una denegación explícita de `dynamodb:DescribeStream` al `LabRole`. Para mantener las alertas, `ingest` y `checkOffline` envían el push a SNS después de guardar el evento. Los logs de entrega están ahora en esas Lambdas.
 - El compañero identificó el sensor como **Sharp GP2Y1010AU0F** y la placa como **ESP32 DevKit V1, CP2102, 30 pines, USB-C**. Se recibió un esquema de conexiones, pero aún falta confirmar con medición el voltaje que llega a GPIO34 y la posible adaptación de Vo.
 
 La lectura actual se presenta como **concentración estimada de polvo**. La notificación comprobada provino del ciclo simulado del firmware anterior. Hay dos nuevos sketches, pero la medición real requiere verificar el voltaje de entrada, el cableado y la calibración antes de cargarlos. Los umbrales **son solo de demostración**. No usar la app para determinar exposición ocupacional ni declarar que un área es segura.

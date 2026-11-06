@@ -7,7 +7,7 @@ Fecha de diseño: 2026-11-05. Alcance: un ESP32, una computadora puente y una ap
 - **Origen de datos:** el ESP32 conectado por USB a la computadora. Windows lo reconoce como `COM3` mediante un CP2102. Se prepararon dos programas nuevos en `firmware/`: simulación y lectura analógica real, ambos a 115200 baudios. Aún hay que verificar el modelo/cableado y cargar el programa deseado; `ESP32_PMS5003_demo.ino` adjunto no es ninguno de ellos.
 - **Puente local:** un proceso en la computadora lee continuamente el puerto serie, agrupa muestras durante 2 segundos y envía una petición HTTPS. Ante un fallo de red descarta ese lote; no convierte lecturas antiguas en alertas nuevas.
 - **Backend:** Amazon API Gateway HTTP API, AWS Lambda y Amazon DynamoDB. AWS Amplify se usa en la aplicación React Native para autenticación y acceso a la API existente. No se necesita EC2, RDS ni un servidor permanente.
-- **Notificaciones:** DynamoDB Streams activa una Lambda de notificaciones al crear un evento de alerta; Amazon SNS Mobile Push entrega el aviso a FCM (Android) o APNs (iOS). La app debe ser una compilación nativa instalable; una vista web o Expo Go no satisface la alerta con la app cerrada.
+- **Notificaciones:** tras guardar una transición en DynamoDB, la Lambda de ingesta o de desconexión consulta los teléfonos registrados y publica directamente en Amazon SNS Mobile Push, que entrega el aviso a FCM (Android) o APNs (iOS). AWS Academy deshabilitó el mapping de DynamoDB Streams por una denegación explícita de `dynamodb:DescribeStream`; el flujo directo evita esa dependencia. La app debe ser una compilación nativa instalable.
 - **Historial:** lecturas periódicas y picos/alertas en DynamoDB. S3 no participa en el flujo crítico. Se añadiría solo para exportaciones CSV o archivos de evidencia cuando exista esa necesidad.
 - **Alcance de medición:** el compañero identificó un sensor óptico Sharp GP2Y1010AU0F y una placa ESP32 DevKit V1 CP2102. Aún no se han validado cableado, calibración ni precisión. El sistema muestra una concentración estimada de polvo, sin identificación validada de PM2.5, PM10, COV, sílice o toxicidad. Los niveles de la demo no son límites ocupacionales; el sistema no declara que el aire sea seguro.
 
@@ -20,9 +20,8 @@ flowchart LR
   PC -->|HTTPS firmado| API[API Gateway HTTP API]
   API --> Ingest[Lambda de ingesta]
   Ingest --> Data[(DynamoDB SmartPpeData)]
-  Data -->|Streams: evento ALERT| Notify[Lambda de notificación]
-  Notify --> Push[(DynamoDB SmartPpePush)]
-  Notify --> SNS[Amazon SNS Mobile Push]
+  Ingest -->|Al crear ALERT| Push[(DynamoDB SmartPpePush)]
+  Ingest --> SNS[Amazon SNS Mobile Push]
   SNS --> FCM[FCM / APNs]
   FCM --> App[App React Native]
   App -->|Amplify Auth: Cognito JWT| API
@@ -31,6 +30,8 @@ flowchart LR
   Read --> Push
   Schedule[EventBridge: cada minuto] --> Offline[Lambda: detectar falta de datos]
   Offline --> Data
+  Offline --> Push
+  Offline --> SNS
 ```
 
 La alarma física no depende de Internet. La notificación móvil sí depende de la PC puente, la red, AWS y el servicio de push del sistema operativo. No se promete entrega instantánea o garantizada.
@@ -42,7 +43,7 @@ Alimentar la placa con 5 V por USB-C permitiría funcionamiento local sin laptop
 1. El puente parsea la línea serie y acumula `instantáneo`, `promedio de 2 s`, máximo del lote y número de muestras. Envía un lote cada 2 segundos con `deviceId`, `sequence`, `observedAt` UTC y `mode` (`real`, `simulated` o `unknown`). Los programas nuevos imprimen también `Modo` y `Estado`, que el puente transmite; con el programa anterior sigue siendo `unknown` salvo que se indique manualmente.
 2. La Lambda de ingesta valida firma, formato, rango, antigüedad y secuencia. Ignora duplicados y lecturas fuera de orden.
 3. La Lambda actualiza el estado actual. Si llega `alarmLevel`, usa ese estado calculado por el ESP32. De lo contrario aplica sus umbrales de **demostración** guardados por dispositivo (75/150 µg/m³ en el despliegue actual), con histéresis y confirmación. Los programas nuevos usan 50/150 µg/m³ y también son solo una demostración. Una transición genera un evento; un estado sostenido no crea una notificación por cada lote.
-4. Una transición crea un elemento `ALERT` en DynamoDB. El Stream invoca la Lambda de notificaciones, que consulta los teléfonos registrados y publica por SNS. El `alertId` viaja en el push para abrir el evento en la misma pantalla.
+4. Una transición crea un elemento `ALERT` en DynamoDB. La misma Lambda consulta los teléfonos registrados y publica por SNS. El `alertId` viaja en el push para abrir el evento en la misma pantalla.
 5. Si no llegan datos durante 30 segundos, las consultas muestran `OFFLINE`. EventBridge comprueba cada minuto y crea **una** alerta de desconexión por transición, si corresponde.
 
 **Sincronización con la alarma física:** los nuevos programas imprimen `Estado: NORMAL/WARNING/CRITICAL`, que el puente envía como `alarmLevel`. Así la transición móvil usa el mismo estado que los LEDs después de cargar uno de ellos. La entrega push sigue sujeta a conexión y al sistema operativo.
@@ -76,7 +77,7 @@ Dos tablas, ambas con capacidad bajo demanda. No se requieren índices secundari
 
 ### `SmartPpeData`
 
-Claves: `PK` (String), `SK` (String). DynamoDB Streams habilitado con imagen nueva para detectar elementos `ALERT`.
+Claves: `PK` (String), `SK` (String). DynamoDB Streams permanece configurado en el stack anterior, pero el mapping quedó deshabilitado por la política de AWS Academy y ya no participa en la entrega de alertas.
 
 | Tipo | PK | SK | Datos principales | Consulta |
 | --- | --- | --- | --- | --- |

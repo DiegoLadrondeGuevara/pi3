@@ -3,6 +3,7 @@ import { db } from '../lib/aws.mjs';
 import { errorReply, parseJson, pathDeviceId, reply } from '../lib/http.mjs';
 import { verifyDeviceRequest } from '../lib/security.mjs';
 import { nextStatus, validateTelemetry } from '../lib/telemetry.mjs';
+import { notifyAlert } from './notify.mjs';
 
 const DAY = 86_400;
 
@@ -95,6 +96,13 @@ export async function handler(event) {
         }
       }
       throw error;
+    }
+    if (alertId) {
+      try {
+        await notifyAlert({ alertId, deviceId, status: state.status });
+      } catch (pushError) {
+        console.error('PUSH_FAILED', { alertId, error: pushError });
+      }
     }
     return reply(202, { accepted: true, status: state.status, alertId });
   } catch (error) {

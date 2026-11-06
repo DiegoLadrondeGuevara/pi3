@@ -1,6 +1,5 @@
 import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { PublishCommand } from '@aws-sdk/client-sns';
-import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { db, sns } from '../lib/aws.mjs';
 
 export function pushMessage(alert, platform) {
@@ -25,23 +24,28 @@ export function pushMessage(alert, platform) {
   return JSON.stringify({ default: body, APNS: JSON.stringify({ aps, ...data }), APNS_SANDBOX: JSON.stringify({ aps, ...data }) });
 }
 
-export async function handler(event) {
-  for (const record of event.Records || []) {
-    if (record.eventName !== 'INSERT' || !record.dynamodb?.NewImage) continue;
-    const alert = unmarshall(record.dynamodb.NewImage);
-    if (!alert.SK?.startsWith('ALERT#')) continue;
-    const result = await db.send(new QueryCommand({
-      TableName: process.env.PUSH_TABLE,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `DEVICE#${alert.deviceId}` },
+export async function notifyAlert(alert) {
+  const result = await db.send(new QueryCommand({
+    TableName: process.env.PUSH_TABLE,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: { ':pk': `DEVICE#${alert.deviceId}` },
+  }));
+  let published = 0;
+  for (const registration of result.Items || []) {
+    if (!registration.enabled) continue;
+    await sns.send(new PublishCommand({
+      TargetArn: registration.endpointArn,
+      MessageStructure: 'json',
+      Message: pushMessage(alert, registration.platform),
     }));
-    for (const registration of result.Items || []) {
-      if (!registration.enabled) continue;
-      await sns.send(new PublishCommand({
-        TargetArn: registration.endpointArn,
-        MessageStructure: 'json',
-        Message: pushMessage(alert, registration.platform),
-      }));
-    }
+    published += 1;
   }
+  console.log('PUSH_RESULT', { alertId: alert.alertId, published });
+  return published;
+}
+
+export async function handler() {
+  // Compatibilidad con el mapping antiguo. La ingesta y el chequeo offline
+  // notifican directamente; el stream queda inactivo en AWS Academy.
+  return { processed: 0 };
 }
