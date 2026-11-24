@@ -24,15 +24,22 @@ try {
     if ($needsVenv) {
         $launcher = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python -ErrorAction SilentlyContinue) { 'python' } else { $null }
         if (-not $launcher) {
-            throw 'Falta Python 3.10 o superior. Instálalo y vuelve a ejecutar este script.'
+            throw 'Falta Python 3.10 o superior. Instalalo y vuelve a ejecutar este script.'
         }
-        $launcherArgs = if ($launcher -eq 'py') { @('-3') } else { @() }
-        & $launcher @launcherArgs -c 'import sys; sys.exit(sys.version_info < (3, 10))'
+        if ($launcher -eq 'py') {
+            & py -3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'
+        } else {
+            & python -c 'import sys; sys.exit(sys.version_info < (3, 10))'
+        }
         if ($LASTEXITCODE -ne 0) {
-            throw 'Se necesita Python 3.10 o superior con el módulo venv.'
+            throw 'Se necesita Python 3.10 o superior con el modulo venv.'
         }
         Write-Host 'Creando entorno virtual en bridge\.venv ...'
-        & $launcher @launcherArgs -m venv --clear $venvDir
+        if ($launcher -eq 'py') {
+            & py -3 -m venv --clear $venvDir
+        } else {
+            & python -m venv --clear $venvDir
+        }
         if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el entorno virtual.' }
     }
 
@@ -41,7 +48,7 @@ try {
         Write-Host 'Instalando la dependencia pyserial 3.5 ...'
         & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $bridgeDir 'requirements.txt')
         if ($LASTEXITCODE -ne 0) {
-            Write-Host 'Reparando pip y reintentando instalación ...'
+            Write-Host 'Reparando pip y reintentando instalacion ...'
             & $venvPython -m ensurepip --upgrade
             & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $bridgeDir 'requirements.txt')
         }
@@ -52,10 +59,10 @@ try {
         $misnamed = Join-Path $bridgeDir 'env'
         if (Test-Path -LiteralPath $misnamed -PathType Leaf) {
             Move-Item -LiteralPath $misnamed -Destination $envFile
-            Write-Host 'Encontré el archivo env sin punto; lo corregí a .env.'
+            Write-Host 'Encontre el archivo env sin punto; lo corregi a .env.'
         } else {
             Copy-Item -LiteralPath (Join-Path $bridgeDir '.env.example') -Destination $envFile
-            throw 'Se creó bridge\.env. Pega DEVICE_HMAC_KEY de forma privada y ejecuta este mismo comando otra vez.'
+            throw 'Se creo bridge\.env. Pega DEVICE_HMAC_KEY de forma privada y ejecuta este mismo comando otra vez.'
         }
     }
 
@@ -68,7 +75,7 @@ try {
         throw 'Revisa SMART_PPE_API_URL en bridge\.env; debe ser una URL HTTPS.'
     }
     if (-not $DryRun -and (-not $config['DEVICE_HMAC_KEY'] -or $config['DEVICE_HMAC_KEY'].Length -lt 32)) {
-        throw 'Falta DEVICE_HMAC_KEY en bridge\.env. Cópiala de forma privada desde la PC donde funciona el puente.'
+        throw 'Falta DEVICE_HMAC_KEY en bridge\.env. Copiala de forma privada desde la PC donde funciona el puente.'
     }
 
     # Evita que variables de entorno antiguas anulen los valores de bridge\.env.

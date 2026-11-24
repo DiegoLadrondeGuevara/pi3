@@ -39,6 +39,8 @@ El único comando de arranque prepara Python, detecta el puerto USB del ESP32, l
 
    La primera vez crea `.venv` e instala `pyserial`; después reutiliza el entorno. Comprueba `.env` sin mostrar la clave, detecta el CP210x aunque no sea `COM3`, sincroniza el reloj con AWS y arranca el puente. Si se desconecta el USB, reintenta el puerto; si falla la red, reintenta el envío. Tras varios fallos seguidos, termina con un diagnóstico. Los lotes que ya quedaron viejos se descartan para evitar alertas retrasadas.
 
+   Si una versión anterior del script dejó la consola en `>>>`, escribe `quit()` y pulsa Enter, trae este cambio con `git pull` y ejecuta de nuevo el mismo comando. Ese prompt era un error de invocación de Python, no una señal de que faltara `pyserial`.
+
    El modo predeterminado es `unknown` si el firmware no informa `Modo`, porque la placa aún requiere validar calibración. Si el firmware imprime `| Modo: real` o `| Modo: simulated`, el puente usa ese dato. No selecciones `-Mode real` hasta confirmar la conexión y calibración del sensor.
 
 4. Espera líneas como `seq=... -> {'accepted': True, ...}`. Abre la app y pulsa **Actualizar**. Detén el puente con Ctrl+C al terminar. Si la app cambia de estado pero no llega la notificación, revisa el flujo SNS/FCM del backend: el puente ya entregó la lectura.
