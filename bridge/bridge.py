@@ -1,6 +1,4 @@
-from pathlib import Path
-
-code = r'''"""Lee el firmware del ESP32 por USB y envia lotes firmados al backend Smart-PPE."""
+"""Lee el firmware del ESP32 por USB y envia lotes firmados al backend Smart-PPE."""
 
 import argparse
 from datetime import datetime, timezone
@@ -145,26 +143,32 @@ def choose_serial_port(ports: list) -> str:
     raise ValueError(f"Varios puertos serie: {available}. Indica uno con --port COMx.")
 
 
-def clock_offset(api_url: str, previous: float = 0.0) -> float:
-    """Ajusta el reloj del puente usando la cabecera Date de API Gateway."""
+def clock_offset(api_url: str) -> float:
+    """Comprueba la API y ajusta el reloj usando su cabecera Date."""
     started_at = time.time()
     try:
+        response = urlopen(api_url.rstrip("/") + "/", timeout=8)
+    except HTTPError as error:
+        # API Gateway puede responder 404 en / y aun asi estar disponible.
+        response = error
+
+    finished_at = time.time()
+    header = response.headers.get("Date")
+    if not header:
+        raise ValueError("La API no devolvio la cabecera Date")
+    server_time = parsedate_to_datetime(header).timestamp()
+    return server_time - (started_at + finished_at) / 2
+
+
+def connect_clock(api_url: str, attempts: int = 3) -> float:
+    for attempt in range(1, attempts + 1):
         try:
-            response = urlopen(api_url.rstrip("/") + "/", timeout=8)
-        except HTTPError as error:
-            response = error
-
-        finished_at = time.time()
-        header = response.headers.get("Date")
-        if not header:
-            raise ValueError("La API no devolvio Date")
-
-        server_time = parsedate_to_datetime(header).timestamp()
-        return server_time - (started_at + finished_at) / 2
-
-    except (URLError, TimeoutError, ValueError) as error:
-        print(f"No se pudo sincronizar la hora con AWS: {error}", file=sys.stderr)
-        return previous
+            return clock_offset(api_url)
+        except (URLError, TimeoutError, ValueError) as error:
+            print(f"AWS no responde (intento {attempt}/{attempts}): {error}", file=sys.stderr)
+            if attempt < attempts:
+                time.sleep(2)
+    raise RuntimeError("No se pudo conectar con AWS. Comprueba Internet, el laboratorio y SMART_PPE_API_URL.")
 
 
 def make_batch(
@@ -222,6 +226,110 @@ def send_batch(
         return json.load(response)
 
 
+def error_detail(error: HTTPError) -> str:
+    try:
+        data = json.loads(error.read().decode("utf-8"))
+        return str(data.get("error") or data.get("message") or "")
+    except (UnicodeError, ValueError, AttributeError):
+        return ""
+
+
+def deliver_batch(api_url: str, device_id: str, secret: str, batch: dict, offset: float):
+    """Reintenta fallos breves; nunca reenvia datos viejos ni oculta fallos de configuracion."""
+    for attempt in range(1, 4):
+        try:
+            result = send_batch(api_url, device_id, secret, batch, offset)
+            if result.get("reason") == "DUPLICADO":
+                # Otra laptop pudo haber enviado una secuencia mayor.
+                batch["sequence"] = max(batch["sequence"] + 1, int(result.get("lastSequence") or 0) + 1)
+                if attempt < 3:
+                    print("Secuencia repetida; ajustando y reintentando.")
+                    continue
+            if result.get("accepted") is not True:
+                raise RuntimeError(f"AWS no acepto la lectura: {result}")
+            return result, offset
+        except HTTPError as error:
+            detail = error_detail(error)
+            if detail == "LECTURA_VENCIDA" and attempt < 3:
+                offset = connect_clock(api_url)
+                batch["observedAt"] = datetime.fromtimestamp(
+                    time.time() + offset, timezone.utc
+                ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                print("Hora corregida con AWS; reintentando lectura.")
+                continue
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 3:
+                raise RuntimeError(f"AWS respondio HTTP {error.code} {detail}. Revisa .env o el laboratorio.") from error
+            print(f"AWS respondio HTTP {error.code}; reintento {attempt}/2.", file=sys.stderr)
+        except (URLError, TimeoutError) as error:
+            if attempt == 3:
+                raise RuntimeError(f"No se pudo enviar a AWS tras 3 intentos: {error}") from error
+            print(f"Fallo de red; reintento {attempt}/2: {error}", file=sys.stderr)
+        time.sleep(attempt)
+    raise RuntimeError("No se pudo enviar la lectura")
+
+
+def read_session(serial_port, args, api_url: str, secret: str, offset: float, sequence: int):
+    samples = []
+    batch_mode = args.mode
+    batch_alarm = None
+    window_start = time.monotonic()
+    last_valid = window_start
+    next_sync = window_start + 300
+    first_unparsed = None
+    failures = 0
+
+    while True:
+        raw = serial_port.readline().decode("utf-8", errors="replace").strip()
+        parsed = parse_reading(raw)
+        if parsed:
+            detected_mode = parsed.mode or args.mode
+            if samples and detected_mode != batch_mode:
+                samples = []
+            batch_mode = detected_mode
+            batch_alarm = parsed.alarm_level
+            samples.append((parsed.instant, parsed.average))
+            last_valid = time.monotonic()
+            first_unparsed = None
+        elif raw and first_unparsed is None:
+            first_unparsed = raw[:120]
+
+        now = time.monotonic()
+        if now - last_valid > 12:
+            sample = f" Ejemplo recibido: {first_unparsed!r}." if first_unparsed else ""
+            raise RuntimeError(f"El ESP32 no entrega lecturas reconocibles en 12 s.{sample} Revisa firmware, USB y 115200 baudios.")
+        if now - window_start < args.interval:
+            continue
+        window_start = now
+        if not samples:
+            continue
+
+        if not args.dry_run and now >= next_sync:
+            try:
+                offset = clock_offset(api_url)
+            except (URLError, TimeoutError, ValueError) as error:
+                print(f"No se pudo actualizar la hora: {error}", file=sys.stderr)
+            next_sync = now + 300
+
+        sequence = next_sequence(sequence, offset)
+        batch = make_batch(args.device_id, sequence, batch_mode, samples, offset, batch_alarm)
+        samples = []
+        if args.dry_run:
+            print(json.dumps(batch, ensure_ascii=False))
+            continue
+
+        try:
+            result, offset = deliver_batch(api_url, args.device_id, secret, batch, offset)
+            sequence = batch["sequence"]
+            save_sequence(args.device_id, sequence)
+            failures = 0
+            print(f"seq={sequence} promedio={batch['average2s']} pico={batch['peak2s']} -> {result}")
+        except RuntimeError as error:
+            failures += 1
+            print(f"Lectura descartada para evitar alertas atrasadas: {error}", file=sys.stderr)
+            if failures >= 3:
+                raise RuntimeError("Tres lecturas consecutivas fallaron. " + str(error)) from error
+
+
 def main() -> int:
     load_local_env()
 
@@ -235,7 +343,7 @@ def main() -> int:
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--device-id", default=os.getenv("DEVICE_ID", "sp32-001"))
     parser.add_argument(
-        "--mode", choices=["real", "simulated", "unknown"], default="real"
+        "--mode", choices=["real", "simulated", "unknown"], default="unknown"
     )
     parser.add_argument("--interval", type=float, default=2.0)
     parser.add_argument(
@@ -268,135 +376,29 @@ def main() -> int:
         )
         return 2
 
-    try:
-        port_name = (
-            choose_serial_port(list(list_ports.comports()))
-            if args.port.lower() == "auto"
-            else args.port
-        )
-    except ValueError as error:
-        print(error, file=sys.stderr)
-        return 2
-
     sequence = load_sequence(args.device_id)
-    print(
-        f"Leyendo {port_name} a {args.baud} baudios; "
-        f"modo={args.mode}; ultima secuencia={sequence}"
-    )
-
-    offset = 0.0 if args.dry_run else clock_offset(api_url)
-    next_sync = time.monotonic() + 300
-
-    if abs(offset) > 30:
-        print(
-            f"Reloj local desfasado {round(offset)} s; "
-            "lecturas ajustadas a la hora de AWS"
-        )
-
     try:
-        with serial.Serial(port_name, args.baud, timeout=0.3) as port:
-            samples = []
-            batch_mode = args.mode
-            batch_alarm = None
-            window_start = time.monotonic()
-            last_sample = window_start
-
-            while True:
-                raw = port.readline().decode("utf-8", errors="replace")
-                parsed = parse_reading(raw)
-
-                if parsed:
-                    detected_mode = parsed.mode or args.mode
-
-                    if samples and detected_mode != batch_mode:
-                        samples = []
-
-                    batch_mode = detected_mode
-                    batch_alarm = parsed.alarm_level
-                    samples.append((parsed.instant, parsed.average))
-                    last_sample = time.monotonic()
-
-                now = time.monotonic()
-
-                if now - window_start < args.interval:
-                    continue
-
-                window_start = now
-
-                if not args.dry_run and now >= next_sync:
-                    offset = clock_offset(api_url, offset)
-                    next_sync = now + 300
-
-                if not samples:
-                    if now - last_sample > 5:
-                        print(
-                            "Sin datos serie recientes; revisar USB/ESP32",
-                            file=sys.stderr,
-                        )
-                        last_sample = now
-                    continue
-
-                sequence = next_sequence(sequence, offset)
-                batch = make_batch(
-                    args.device_id,
-                    sequence,
-                    batch_mode,
-                    samples,
-                    offset,
-                    batch_alarm,
-                )
-                samples = []
-
-                if args.dry_run:
-                    print(json.dumps(batch, ensure_ascii=False))
-                    continue
-
-                save_sequence(args.device_id, sequence)
-
-                try:
-                    result = send_batch(
-                        api_url, args.device_id, secret, batch, offset
-                    )
-                    print(
-                        f"seq={sequence} promedio={batch['average2s']} "
-                        f"pico={batch['peak2s']} -> {result}"
-                    )
-
-                except HTTPError as error:
-                    try:
-                        detail = json.loads(
-                            error.read().decode("utf-8")
-                        ).get("error")
-                    except (UnicodeError, ValueError, AttributeError):
-                        detail = None
-
-                    reason = f" ({detail})" if isinstance(detail, str) else ""
-                    print(
-                        f"Envio fallo en seq={sequence}: HTTP {error.code}"
-                        f"{reason}. Lote descartado para no alertar tarde.",
-                        file=sys.stderr,
-                    )
-
-                except (URLError, TimeoutError, ValueError) as error:
-                    print(
-                        f"Envio fallo en seq={sequence}: {error}. "
-                        "Lote descartado para no alertar tarde.",
-                        file=sys.stderr,
-                    )
-
+        offset = 0.0 if args.dry_run else connect_clock(api_url)
+        if abs(offset) > 30:
+            print(f"Reloj local desfasado {round(offset)} s; lecturas ajustadas a AWS")
+        for attempt in range(1, 4):
+            try:
+                port_name = choose_serial_port(list(list_ports.comports())) if args.port.lower() == "auto" else args.port
+                print(f"Leyendo {port_name} a {args.baud} baudios; modo={args.mode}; ultima secuencia={sequence}")
+                with serial.Serial(port_name, args.baud, timeout=0.3) as port:
+                    read_session(port, args, api_url, secret, offset, sequence)
+            except (ValueError, serial.SerialException, RuntimeError) as error:
+                if attempt == 3:
+                    raise RuntimeError(f"No se pudo mantener la conexion serie tras 3 intentos: {error}") from error
+                print(f"Puerto/ESP32: {error} Reintentando ({attempt}/2)...", file=sys.stderr)
+                time.sleep(2)
     except KeyboardInterrupt:
         print("Puente detenido")
         return 0
-
-    except serial.SerialException as error:
-        print(f"No se puede abrir o leer {port_name}: {error}", file=sys.stderr)
+    except RuntimeError as error:
+        print(f"Error: {error}", file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-'''
-
-path = Path("/mnt/data/smart_ppe_bridge_compatible.py")
-path.write_text(code, encoding="utf-8")
-print(f"Archivo creado: {path}")

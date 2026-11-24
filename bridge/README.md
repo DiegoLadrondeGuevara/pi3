@@ -1,6 +1,6 @@
-# Ejecutar el puente Smart-PPE en otra laptop Windows
+# Ejecutar Smart-PPE desde una laptop Windows
 
-Este procedimiento mantiene la **simulación que ya está cargada en el ESP32**. No hay que cargar los archivos `ESP32_PMS5003_demo.ino` recibidos: tanto el archivo suelto como el incluido en `Simulacion_ESP32_PMS5003.zip` son idénticos y corresponden a otro sensor, el **PMS5003 por UART**. El equipo de este proyecto usa un **GP2Y1010AU0F analógico**. El ZIP incluye además un simulador HTML independiente de la app Android.
+El único comando de arranque prepara Python, detecta el puerto USB del ESP32, lee sus mediciones en tiempo real y las envía a AWS. No cambia el firmware de la placa. El equipo usa un sensor **GP2Y1010AU0F analógico**; el ejemplo `ESP32_PMS5003_demo.ino` de un PMS5003 UART corresponde a otro sensor.
 
 ## Una sola vez en la laptop
 
@@ -13,7 +13,7 @@ Este procedimiento mantiene la **simulación que ya está cargada en el ESP32**.
    cd .\pi3\bridge
    ```
 
-3. Copia **privadamente** `bridge/.env` de la PC donde ya funciona el puente a la misma carpeta `bridge` de la laptop. También puedes dejar que el script cree un `.env` desde `.env.example` y pegar allí `DEVICE_HMAC_KEY`. Ese valor debe ser **exactamente el mismo** del backend desplegado. No lo subas a Git, no lo pegues en el chat y no copies credenciales temporales de AWS Academy: el puente usa HTTPS firmado, no la CLI de AWS.
+3. Copia **privadamente** `bridge/.env` de la PC donde ya funciona el puente a la misma carpeta `bridge` de la laptop. También puedes ejecutar el script una vez para que cree `.env` desde `.env.example` y pegar allí `DEVICE_HMAC_KEY`. El script corrige automáticamente un archivo llamado `env` sin el punto inicial. Esa clave debe ser **exactamente la misma** del backend desplegado. No la subas a Git ni la pegues en el chat. El puente usa HTTPS firmado, no credenciales de AWS.
 
    ```powershell
    notepad .\.env
@@ -37,9 +37,11 @@ Este procedimiento mantiene la **simulación que ya está cargada en el ESP32**.
    powershell -NoProfile -ExecutionPolicy Bypass -File .\start-bridge.ps1
    ```
 
-   La primera vez el script crea `.venv` e instala `pyserial`; en las siguientes reutiliza el entorno. Detecta automáticamente un CP210x aunque no sea `COM3`, comprueba `bridge/.env` sin mostrar la clave, sincroniza la hora con AWS y arranca el puente en modo `simulated` para el firmware actual.
+   La primera vez crea `.venv` e instala `pyserial`; después reutiliza el entorno. Comprueba `.env` sin mostrar la clave, detecta el CP210x aunque no sea `COM3`, sincroniza el reloj con AWS y arranca el puente. Si se desconecta el USB, reintenta el puerto; si falla la red, reintenta el envío. Tras varios fallos seguidos, termina con un diagnóstico. Los lotes que ya quedaron viejos se descartan para evitar alertas retrasadas.
 
-4. Espera líneas como `seq=... -> {'accepted': True, ...}`. Abre la app y pulsa **Actualizar**. Cuando el ciclo pase de normal a alerta, comprueba la notificación Android. Detén el puente con Ctrl+C al terminar.
+   El modo predeterminado es `unknown` si el firmware no informa `Modo`, porque la placa aún requiere validar calibración. Si el firmware imprime `| Modo: real` o `| Modo: simulated`, el puente usa ese dato. No selecciones `-Mode real` hasta confirmar la conexión y calibración del sensor.
+
+4. Espera líneas como `seq=... -> {'accepted': True, ...}`. Abre la app y pulsa **Actualizar**. Detén el puente con Ctrl+C al terminar. Si la app cambia de estado pero no llega la notificación, revisa el flujo SNS/FCM del backend: el puente ya entregó la lectura.
 
 ## Comandos útiles
 
@@ -69,6 +71,8 @@ git pull --ff-only
 cd .\bridge
 ```
 
-El puente genera secuencias basadas en la hora ajustada con AWS, por lo que cambiar de PC no requiere copiar `.bridge-state.json`. Mantén el reloj de Windows razonablemente sincronizado y cierra el puente en una PC antes de abrirlo en la otra. Si ves `DUPLICADO`, espera unos segundos y comprueba que solo una PC está enviando. Si ves `FIRMA_INVALIDA`, la clave local no coincide con la del backend. Si la app muestra **Sensor sin conexión**, revisa que el puente siga abierto, que el USB aparezca como COM y que el laboratorio esté activo.
+Si `git pull --ff-only` informa que las ramas divergen, **no borres `.env`**. Consulta con el responsable antes de forzar el repositorio; los cambios locales podrían perderse.
+
+El puente genera secuencias basadas en la hora ajustada con AWS, por lo que cambiar de PC no requiere copiar `.bridge-state.json`. Cierra el puente en una PC antes de abrirlo en la otra. Si AWS dice `FIRMA_INVALIDA`, la clave local no coincide con el backend. Si sale `No se detectaron puertos serie`, comprueba cable USB de datos y controlador CP210x. Si el puerto está ocupado, cierra el Monitor Serie de Arduino. Si aparece `no entrega lecturas reconocibles`, confirma que el firmware imprime `Instantáneo: ... ug/m3 | Promedio (2s): ... ug/m3` a 115200 baudios. Si la app muestra **Sensor sin conexión**, revisa que el puente siga abierto y produzca líneas `accepted: True`.
 
 La alimentación USB-C desde un cargador puede mantener los LEDs locales, pero **el envío al celular sigue dependiendo del puente en la laptop** hasta que se implemente conectividad Wi-Fi en el ESP32.

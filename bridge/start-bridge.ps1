@@ -2,7 +2,7 @@
 param(
     [string]$Port = 'auto',
     [ValidateSet('simulated', 'unknown', 'real')]
-    [string]$Mode = 'simulated',
+    [string]$Mode = 'unknown',
     [ValidateRange(0.5, 30.0)]
     [double]$Interval = 2.0,
     [switch]$DryRun
@@ -12,9 +12,16 @@ $ErrorActionPreference = 'Stop'
 $bridgeDir = $PSScriptRoot
 $venvPython = Join-Path $bridgeDir '.venv\Scripts\python.exe'
 $envFile = Join-Path $bridgeDir '.env'
+$venvDir = Join-Path $bridgeDir '.venv'
 
 try {
-    if (-not (Test-Path -LiteralPath $venvPython)) {
+    $needsVenv = -not (Test-Path -LiteralPath $venvPython)
+    if (-not $needsVenv) {
+        & $venvPython -c 'import sys; sys.exit(sys.version_info < (3, 10))'
+        $needsVenv = $LASTEXITCODE -ne 0
+        if ($needsVenv) { Write-Host 'Reparando entorno virtual de Python ...' }
+    }
+    if ($needsVenv) {
         $launcher = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python -ErrorAction SilentlyContinue) { 'python' } else { $null }
         if (-not $launcher) {
             throw 'Falta Python 3.10 o superior. Instálalo y vuelve a ejecutar este script.'
@@ -25,23 +32,31 @@ try {
             throw 'Se necesita Python 3.10 o superior con el módulo venv.'
         }
         Write-Host 'Creando entorno virtual en bridge\.venv ...'
-        & $launcher @launcherArgs -m venv (Join-Path $bridgeDir '.venv')
+        & $launcher @launcherArgs -m venv --clear $venvDir
         if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el entorno virtual.' }
     }
-
-    & $venvPython -c 'import sys; sys.exit(sys.version_info < (3, 10))'
-    if ($LASTEXITCODE -ne 0) { throw 'El entorno virtual usa Python anterior a 3.10. Elimina solo bridge\.venv y vuelve a ejecutar.' }
 
     & $venvPython -c 'import importlib.util as u,importlib.metadata as m,sys; sys.exit(not u.find_spec(''serial'') or m.version(''pyserial'') != ''3.5'')'
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Instalando la dependencia pyserial 3.5 ...'
-        & $venvPython -m pip install -r (Join-Path $bridgeDir 'requirements.txt')
+        & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $bridgeDir 'requirements.txt')
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host 'Reparando pip y reintentando instalación ...'
+            & $venvPython -m ensurepip --upgrade
+            & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $bridgeDir 'requirements.txt')
+        }
         if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar pyserial. Comprueba Internet y vuelve a intentar.' }
     }
 
     if (-not (Test-Path -LiteralPath $envFile)) {
-        Copy-Item -LiteralPath (Join-Path $bridgeDir '.env.example') -Destination $envFile
-        throw 'Se creó bridge\.env. Abre ese archivo, pega DEVICE_HMAC_KEY desde la PC anterior y ejecuta el script otra vez.'
+        $misnamed = Join-Path $bridgeDir 'env'
+        if (Test-Path -LiteralPath $misnamed -PathType Leaf) {
+            Move-Item -LiteralPath $misnamed -Destination $envFile
+            Write-Host 'Encontré el archivo env sin punto; lo corregí a .env.'
+        } else {
+            Copy-Item -LiteralPath (Join-Path $bridgeDir '.env.example') -Destination $envFile
+            throw 'Se creó bridge\.env. Pega DEVICE_HMAC_KEY de forma privada y ejecuta este mismo comando otra vez.'
+        }
     }
 
     $config = @{}

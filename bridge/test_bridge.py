@@ -1,7 +1,9 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
+from urllib.error import URLError
 
-from bridge import choose_serial_port, make_batch, next_sequence, parse_line, parse_reading, sign
+from bridge import choose_serial_port, deliver_batch, make_batch, next_sequence, parse_line, parse_reading, sign
 
 
 class BridgeTests(unittest.TestCase):
@@ -45,6 +47,20 @@ class BridgeTests(unittest.TestCase):
 
     def test_hmac_is_stable(self):
         self.assertEqual(len(sign("x" * 32, "1234567890123", "/v1/devices/sp32-001/telemetry", "{}")), 64)
+
+    def test_retry_after_transient_network_failure(self):
+        batch = make_batch("sp32-001", 3, "unknown", [(20, 20)])
+        with patch("bridge.send_batch", side_effect=[URLError("temporary"), {"accepted": True, "status": "NORMAL"}]) as send, patch("bridge.time.sleep"):
+            result, _ = deliver_batch("https://example.test", "sp32-001", "x" * 32, batch, 0)
+        self.assertTrue(result["accepted"])
+        self.assertEqual(send.call_count, 2)
+
+    def test_duplicate_sequence_is_raised_to_server_value(self):
+        batch = make_batch("sp32-001", 3, "unknown", [(20, 20)])
+        with patch("bridge.send_batch", side_effect=[{"accepted": False, "reason": "DUPLICADO", "lastSequence": 99}, {"accepted": True, "status": "NORMAL"}]):
+            result, _ = deliver_batch("https://example.test", "sp32-001", "x" * 32, batch, 0)
+        self.assertTrue(result["accepted"])
+        self.assertEqual(batch["sequence"], 100)
 
 
 if __name__ == "__main__":
